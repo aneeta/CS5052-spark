@@ -9,3 +9,7 @@ import json
 
 with open("data/local-authority-district.json") as f:
     LA_GEOJSON = rewind(json.load(f), False)
+
+
+with open("data/region.json") as f:
+    REGION_GEOJSON = rewind(json.load(f), False)
