@@ -9,7 +9,7 @@ from pyspark.ml.stat import ChiSquareTest, Correlation
 from pyspark.sql import SparkSession
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import VectorAssembler, StringIndexer, OneHotEncoder
-from pyspark.ml.regression import LinearRegression, RandomForestRegressor, GBTRegressor
+from pyspark.ml.regression import LinearRegression, RandomForestRegressor, GBTRegressor, GeneralizedLinearRegression
 from pyspark.ml.evaluation import RegressionEvaluator
 from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
 from pyspark.sql.functions import udf
@@ -311,12 +311,74 @@ assembler = VectorAssembler(inputCols=feature_columns, outputCol="features")
 # pipeline = Pipeline(stages=[*encoders, assembler])
 # data_model = pipeline.fit(data_enriched)
 
+def fit_to_data_model(data):
+    data_model = None
+    for encoder in encoders:
+        data = encoder.fit(data)
+        data_model = encoder.transform(data)
+    data = assembler.fit(data_model)
+    return assembler.transform(data)
+
+# data_model = fit_to_data_model(data_enriched)
 
 def get_nested_pie():
     return data_enriched.groupBy(["school_type", "TypeOfEstablishment (name)",])\
              .agg(
                 sum("enrolments").alias("Total Enrolments")
              ).toPandas()
+def run_ml():
+    print("""
+    Build models to predict absence rate.
+
+    To make predictions, navigate to the web app.
+    """)
+
+
+    train_data, test_data = fit_to_data_model(data_enriched).select("features", "sess_overall_percent").randomSplit([0.8, 0.2], seed=0)
+
+
+    # Define the evaluator
+    evaluator = RegressionEvaluator(labelCol="sess_overall_percent", predictionCol="prediction", metricName="rmse")
+
+    # ### Linear regression
+    lr = LinearRegression(featuresCol="features", labelCol="sess_overall_percent")
+
+    data_institution.printSchema()
+    param_grid_lr = ParamGridBuilder() \
+            .addGrid(lr.regParam, [0.1, 0.01, 0.001]) \
+            .addGrid(lr.elasticNetParam, [0.0, 0.5, 1.0]) \
+            .build()
+
+
+    cross_validator = CrossValidator(
+        estimator=lr,
+        estimatorParamMaps=param_grid_lr,
+        evaluator=evaluator,
+        numFolds=5
+    )
+
+    cv_model_lr = cross_validator.fit(train_data)
+    best_lr_model = cv_model_lr.bestModel
+
+    # predictions_lr = cv_model_lr.transform(test_data)
+    glm = GeneralizedLinearRegression(featuresCol="features", labelCol="sess_overall_percent", family="gaussian", link="identity")
+    param_grid_glm = ParamGridBuilder() \
+        .addGrid(glm.regParam, [0.1, 0.01, 0.001]) \
+        .addGrid(glm.elasticNetParam, [0.0, 0.5, 1.0]) \
+        .build()
+    # Train the model using the training data
+    cross_validator_glm = CrossValidator(estimator=glm,
+                                    estimatorParamMaps=param_grid_glm,
+                                    evaluator=evaluator,
+                                    numFolds=5)
+    cv_model_glm = cross_validator_glm.fit(train_data)
+    best_glm_model = cv_model_glm.bestModel
+    # predictions_glm = best_glm_model.transform(test_data)
+    # rmse_glm = evaluator.evaluate(predictions_glm)
+    # cv_model_lr.bestModel.save("ml_model/glm")
+
+    # print(f"[GLM] Root Mean Squared Error (RMSE) for the best model: {rmse_glm}")
+    return best_lr_model, best_glm_model
 
 
 def part_one():
@@ -423,6 +485,7 @@ def part_three():
     print("===Part 3===")
     get_region_plots()
     get_la_plots()
+    run_ml()
 
 
 def main():
