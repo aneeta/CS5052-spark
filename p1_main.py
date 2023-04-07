@@ -1,35 +1,20 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import sum, col, desc, avg, row_number, col, concat, substring, lit
-from pyspark.sql.types import StructType,StructField, StringType, IntegerType
-from pyspark.sql.window import Window
-
-from pyspark.sql.types import LongType
-
-from pyspark.ml.stat import ChiSquareTest, Correlation
-from pyspark.sql import SparkSession
-from pyspark.ml import Pipeline
-from pyspark.ml.feature import VectorAssembler, StringIndexer, OneHotEncoder
-from pyspark.ml.regression import LinearRegression, RandomForestRegressor, GBTRegressor, GeneralizedLinearRegression
-from pyspark.ml.evaluation import RegressionEvaluator
-from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
-from pyspark.sql.functions import udf
-from pyspark.sql.types import IntegerType
-
-import seaborn as sns
-
-from pyspark.ml.feature import StringIndexer, OneHotEncoder
-from pyspark.ml import Pipeline
-from pyspark.ml.feature import VectorAssembler
-
-from pyspark.ml.regression import LinearRegression
-from pyspark.ml.evaluation import RegressionEvaluator
-
-import matplotlib.pyplot as plt
-
 import warnings
 
-warnings.filterwarnings("ignore", category=UserWarning)
+from pyspark.sql import SparkSession, Row
+from pyspark.sql.functions import sum, col, row_number, col, concat, substring, lit, udf
+from pyspark.sql.window import Window
+from pyspark.sql.types import LongType, IntegerType
+from pyspark.ml import Pipeline
+from pyspark.ml.feature import VectorAssembler, OneHotEncoder
+from pyspark.ml.regression import LinearRegression, GeneralizedLinearRegression
+from pyspark.ml.evaluation import RegressionEvaluator
+from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
 
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 spark = SparkSession.builder.master("local") \
@@ -88,8 +73,8 @@ def get_unauth_absences(year, view):
     return data.where(col("geographic_level") == gl[0])\
                .where(col("time_period") == year)\
                .groupBy(gl[1])\
+               .agg(sum("sess_unauthorised").alias("All unauthorised absences"))\
                .orderBy(gl[1])\
-                .agg(sum("sess_unauthorised").alias("All unauthorised absences"))\
                .withColumnRenamed(gl[1], gl[2])
 
 # ## List the top 3 reasons for authorised absences in each year.
@@ -175,7 +160,6 @@ def explore():
 # ## Analyse whether there is a link between school type, pupil absences and the location of the school.
 # For example, is it more likely that schools of type X will have more pupil absences in location Y?
 
-# ### Region Level
 def get_region_analysis():
     return data.where(col("geographic_level") == "Regional")\
                 .where(col("school_type") != "Total")\
@@ -207,28 +191,6 @@ def get_region_plots():
     plt.clf()
     plot_2 = sns.swarmplot(y='School Type', x='Overall Absence Rate (%)', hue='Region', data=region_df.toPandas())
     plot_2.get_figure().savefig("Region_Type_Absence.png", bbox_inches="tight")
-
-
-# categorical_columns = ["Region", "School Type"] 
-
-# indexers = [
-#     StringIndexer(inputCol=c, outputCol=f"{c} Index")
-#     for c in categorical_columns
-# ]
-
-# encoders = [
-#     OneHotEncoder(inputCol=f"{c} Index", outputCol=f"{c} Vec")
-#     for c in categorical_columns
-# ]
-
-# pipeline = Pipeline(stages=indexers + encoders)
-# region_df_transformed = pipeline.fit(region_df).transform(region_df)
-
-# region_df_transformed.corr("Region Index", 'Overall Absence Rate (%)')
-
-# region_df_transformed.corr("School Type Index", 'Overall Absence Rate (%)')
-
-# ### Local Authority Level
 
 def get_la_analysis():
     return data.where(col("geographic_level") == "Local authority")\
@@ -304,20 +266,20 @@ encoders = [
     OneHotEncoder(inputCol=f"{c} (code)", outputCol=f"{c} Vec")
     for c in to_encode
 ]
-feature_columns = to_encode + ["time_period"]
+feature_columns = ["time_period"] + [f"{c} Vec" for c in to_encode]
 assembler = VectorAssembler(inputCols=feature_columns, outputCol="features")
 
 # THROWS RuntimeError: SparkContext should only be created and accessed on the driver.
-# pipeline = Pipeline(stages=[*encoders, assembler])
+pipeline = Pipeline(stages=encoders+[assembler])
 # data_model = pipeline.fit(data_enriched)
 
-def fit_to_data_model(data):
-    data_model = None
-    for encoder in encoders:
-        data = encoder.fit(data)
-        data_model = encoder.transform(data)
-    data = assembler.fit(data_model)
-    return assembler.transform(data)
+# def fit_to_data_model(data):
+#     data_model = None
+#     for encoder in encoders:
+#         data = encoder.fit(data)
+#         data_model = encoder.transform(data)
+#     data = assembler.fit(data_model)
+#     return assembler.transform(data)
 
 # data_model = fit_to_data_model(data_enriched)
 
@@ -326,15 +288,28 @@ def get_nested_pie():
              .agg(
                 sum("enrolments").alias("Total Enrolments")
              ).toPandas()
+
+
+def transform_to_predict(model, new_row_values):
+    data_model = pipeline.fit(data_enriched)
+    column_names = ["time_period","school_type (code)", 'LA (code)', 'TypeOfEstablishment (code)', 'PhaseOfEducation (code)', 'Gender (code)']
+    new_row_dict = dict(zip(column_names, new_row_values))
+    # Create a Row object with the new row values and the corresponding column names
+    new_row = Row(**new_row_dict)
+    # Create a new DataFrame with the single row
+    new_row_df = data.sparkSession.createDataFrame([new_row])
+    predictions_new = model.transform(data_model.transform(new_row_df))
+#     return predictions_new
+    return predictions_new
+
+
 def run_ml():
     print("""
-    Build models to predict absence rate.
-
-    To make predictions, navigate to the web app.
+    Building models to predict absence rate.
     """)
+    data_model = pipeline.fit(data_enriched)
 
-
-    train_data, test_data = fit_to_data_model(data_enriched).select("features", "sess_overall_percent").randomSplit([0.8, 0.2], seed=0)
+    train_data, test_data = data_model.transform(data_enriched).select("features", "sess_overall_percent").randomSplit([0.8, 0.2], seed=0)
 
 
     # Define the evaluator
@@ -342,8 +317,7 @@ def run_ml():
 
     # ### Linear regression
     lr = LinearRegression(featuresCol="features", labelCol="sess_overall_percent")
-
-    data_institution.printSchema()
+    print(f"[LR] Training...")
     param_grid_lr = ParamGridBuilder() \
             .addGrid(lr.regParam, [0.1, 0.01, 0.001]) \
             .addGrid(lr.elasticNetParam, [0.0, 0.5, 1.0]) \
@@ -359,13 +333,20 @@ def run_ml():
 
     cv_model_lr = cross_validator.fit(train_data)
     best_lr_model = cv_model_lr.bestModel
+    print(f"[LR] Evaluating...")
 
-    # predictions_lr = cv_model_lr.transform(test_data)
+    predictions_lr = cv_model_lr.transform(test_data)
+    rmse_lr = evaluator.evaluate(predictions_lr)
+    # cv_model_lr.bestModel.save("ml_model/glm")
+
+    print(f"[LR] Root Mean Squared Error (RMSE) for the best model: {rmse_lr}")
+
     glm = GeneralizedLinearRegression(featuresCol="features", labelCol="sess_overall_percent", family="gaussian", link="identity")
     param_grid_glm = ParamGridBuilder() \
         .addGrid(glm.regParam, [0.1, 0.01, 0.001]) \
-        .addGrid(glm.elasticNetParam, [0.0, 0.5, 1.0]) \
         .build()
+        # .addGrid(glm.elasticNetParam, [0.0, 0.5, 1.0]) \
+    print(f"[GLM] Training...")
     # Train the model using the training data
     cross_validator_glm = CrossValidator(estimator=glm,
                                     estimatorParamMaps=param_grid_glm,
@@ -373,11 +354,12 @@ def run_ml():
                                     numFolds=5)
     cv_model_glm = cross_validator_glm.fit(train_data)
     best_glm_model = cv_model_glm.bestModel
-    # predictions_glm = best_glm_model.transform(test_data)
-    # rmse_glm = evaluator.evaluate(predictions_glm)
+    print(f"[GLM] Evaluating...")
+    predictions_glm = best_glm_model.transform(test_data)
+    rmse_glm = evaluator.evaluate(predictions_glm)
     # cv_model_lr.bestModel.save("ml_model/glm")
 
-    # print(f"[GLM] Root Mean Squared Error (RMSE) for the best model: {rmse_glm}")
+    print(f"[GLM] Root Mean Squared Error (RMSE) for the best model: {rmse_glm}")
     return best_lr_model, best_glm_model
 
 
@@ -451,13 +433,15 @@ def part_two():
     Explore the dataset.
     """)
 
-    print("Are there any regions that have improved in pupil attendance?")
-    print("=TODO=")
+    print("> Are there any regions that have improved in pupil attendance?")
+    print("""
+    Inner London has significantly improved its rates of overall absence.
+    Its rates were the second highest in 2007/08, and dropped to lowest in 2012/13.
+    They have remained lowest or second lowest out of all regions since.
+    """)
 
-    print("Are there any regions that have improved in pupil attendance?")
-    print("=TODO=")
 
-    print("Which is the overall worst region for pupil attendance?")
+    print("> Which is the overall worst region for pupil attendance?")
     explore().where(col('School Type') == 'Total')\
         .groupBy("Region")\
         .agg(
@@ -469,7 +453,7 @@ def part_two():
         .orderBy("Overall Absence Rate (%)")\
         .limit(5).show()
 
-    print("Which is the overall best region for pupil attendance?")
+    print("> Which is the overall best region for pupil attendance?")
     explore().where(col('School Type') == 'Total')\
         .groupBy("Region")\
         .agg(
