@@ -8,10 +8,18 @@ Web app is bult with `dash` and `dash-bootstrap-components `.
 
 - Ensure PySpark is installed and accessible
 - Install dependencies
+
 ```
 pip install dash dash_bootstrap_components pandas geojson_rewind dash-daq
 ```
 
+### Run CLI
+```
+python p1_main.py
+```
+
+
+### Run web app
 ```
 python webapp/app.py
 ```
