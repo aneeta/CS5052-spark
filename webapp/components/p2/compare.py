@@ -5,6 +5,7 @@ from plotly.subplots import make_subplots
 
 
 from webapp.components.maindash import app
+# from spark import data, la_data, LA_NAMES, SCHOOL_TYPES, PERIODS
 from p1_main import (compare, LA_NAMES, PERIODS)
 
 def compare_component():
@@ -58,6 +59,7 @@ def _compare_figure(loacal_authorities, year):
     for t in absences.data:
         fig.append_trace(t, row=3, col=1)
 
-    fig.update_layout(height=1000, width=800, title_text="Comparison Plots")
+    fig.update_layout(height=1000, width=800, title_text="Comparison Plots",
+                      showlegend=False)
 
     return fig

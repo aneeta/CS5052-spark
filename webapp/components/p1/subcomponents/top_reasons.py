@@ -1,21 +1,14 @@
-from dash import Dash, dcc, html
-import dash_bootstrap_components as dbc
-
+from dash import dcc, html
 from dash.dependencies import Input, Output
 
 import plotly.graph_objects as go
-import plotly.express as px
-
-from plotly.subplots import make_subplots
-
-
-from pyspark.sql.functions import sum, col, desc, row_number
+from pyspark.sql.functions import sum, col, row_number
 from pyspark.sql.types import LongType
 from pyspark.sql.window import Window
 
 from webapp.components.maindash import app
 
-from p1_main import data, la_data, LA_NAMES, SCHOOL_TYPES, PERIODS
+from p1_main import data, PERIODS
 
 top = data.where(col("geographic_level") == "National").groupBy('time_period').agg(
     sum("sess_auth_appointments").alias("Appointments"),

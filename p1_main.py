@@ -266,6 +266,58 @@ def get_la_plots():
     fig.set_size_inches(8,5)
     plot_2.get_figure().savefig("LA_Type_Absence.png", bbox_inches="tight")
 
+data_institution = spark.read \
+.format("csv") \
+.option("inferSchema", "true") \
+.option("header", "true") \
+.load("data/edubasealldata20230323.csv")\
+.withColumnRenamed("URN", "urn")
+
+data_enriched = data.join(data_institution, on=["urn"], how="left")\
+                    .where(col("geographic_level") == "School")\
+                    .where(col("Gender (code)").isNotNull())\
+                    .where(col("TypeOfEstablishment (code)").isNotNull())\
+                    .where(col("PhaseOfEducation (code)").isNotNull())
+
+### Fixed mappings (cat to numeric)
+SCHOOL_TYPE_MAP = {
+    "Special": 0,
+    "State-funded primary": 1,
+    "State-funded secondary": 2,
+}
+PHASE_MAP = {i["PhaseOfEducation (name)"]:i["PhaseOfEducation (code)"] for i in data_enriched.select("PhaseOfEducation (name)", "PhaseOfEducation (code)").distinct().collect()}
+GENDER_MAP = {i["Gender (name)"]:i["Gender (code)"] for i in data_enriched.select("Gender (name)", "Gender (code)").distinct().collect()}
+EST_MAP = {i["TypeOfEstablishment (name)"]:i["TypeOfEstablishment (code)"] for i in data_enriched.select("TypeOfEstablishment (name)", "TypeOfEstablishment (code)").distinct().collect()}
+LA_MAP = {i["LA (name)"]:i["LA (code)"] for i in data_enriched.select("LA (name)", "LA (code)").distinct().collect()}
+
+def encode_school_type(tier):
+    return SCHOOL_TYPE_MAP[tier]
+
+encode_tier_udf = udf(encode_school_type, IntegerType())
+
+# Apply the UDF to encode the tiered categories
+data_enriched = data_enriched.withColumn("school_type (code)", encode_tier_udf("school_type"))
+
+to_encode = ["school_type", 'LA', 'TypeOfEstablishment', 'PhaseOfEducation', 'Gender']
+
+encoders = [
+    OneHotEncoder(inputCol=f"{c} (code)", outputCol=f"{c} Vec")
+    for c in to_encode
+]
+feature_columns = to_encode + ["time_period"]
+assembler = VectorAssembler(inputCols=feature_columns, outputCol="features")
+
+# THROWS RuntimeError: SparkContext should only be created and accessed on the driver.
+# pipeline = Pipeline(stages=[*encoders, assembler])
+# data_model = pipeline.fit(data_enriched)
+
+
+def get_nested_pie():
+    return data_enriched.groupBy(["school_type", "TypeOfEstablishment (name)",])\
+             .agg(
+                sum("enrolments").alias("Total Enrolments")
+             ).toPandas()
+
 
 def part_one():
     print("===Part 1===")

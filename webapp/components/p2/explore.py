@@ -1,37 +1,14 @@
-from p1_main import explore
-
-from dash import Dash, dcc, html
-import dash_bootstrap_components as dbc
+from dash import dcc, html
 import dash_daq as daq
-
-
 from dash.dependencies import Input, Output
-
-
 import plotly.express as px
-
-
-
-from pyspark.sql.functions import sum, col, desc, row_number
-from pyspark.sql.types import LongType
-from pyspark.sql.window import Window
+from pyspark.sql.functions import col
 
 from webapp.components.maindash import app
-
-
 from p1_main import explore
 
-def explore_component():
-    # data = explore().toPandas()
-    # absences = dcc.Graph(id="absences-graph",
-    #                      figure=px.line(data, x="Year", y="Overall Absence Rate (%)",
-    #                                     color="Region", symbol="School Type",
-    #                                     title="Absence Trends"))
-    # absentees = dcc.Graph(id="absentees-graph",
-    #                       figure=px.line(data, x="Year", y="Persistant Absentees Rate (%)",
-    #                                     color="Region", symbol="School Type",
-    #                                     title="Persistent Absentee Trends"))
 
+def explore_component():
     title = html.H3('Explore Performance over Time')
     description = html.P("""
     """)
@@ -61,9 +38,6 @@ def explore_component():
                 label=['All', 'By Type'],labelPosition="top", id='absentees-switch')],
                 style={"padding": 10}),
             dcc.Graph(id="absentees-graph")]),
-        # dcc.Tab(label='Absences', children=[absences]),
-        # dcc.Tab(label='Absentees', children=[absentees])
-
     ])
     
     return html.Div([title, description, tabs], style={"padding": 20})

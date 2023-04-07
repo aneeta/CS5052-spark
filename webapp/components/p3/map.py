@@ -5,7 +5,7 @@ from pyspark.sql.functions import sum, col
 
 from webapp.components.maindash import app
 
-from spark import data, la_data, LA_NAMES, SCHOOL_TYPES, PERIODS
+from p1_main import data, la_data
 
 from webapp.data import LA_GEOJSON
 
@@ -15,8 +15,9 @@ def new_la_map_component():
     Interactive and intuitive animated visualistation using external libraries
     as well as additional geographical data.
     """)
+    source = dcc.Link("[Source]", href="https://www.planning.data.gov.uk/dataset/local-authority-district")
     graph = dcc.Graph(id="map-graph", figure=_new_la_map_figure())
-    return html.Div([title, graph])
+    return html.Div([title, description, source, graph])
 
 
 @app.callback(
