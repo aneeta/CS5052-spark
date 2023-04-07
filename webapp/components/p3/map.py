@@ -10,15 +10,11 @@ from spark import data, la_data, LA_NAMES, SCHOOL_TYPES, PERIODS
 from webapp.data import LA_GEOJSON
 
 def new_la_map_component():
-    # slider = dcc.Slider(200607, 201819,
-    #                     id='map-slider',
-    #                     step=None,
-    #                     marks={i: '{}/{}'.format(str(i)[:4], str(i)[4:])
-    #                            for i in PERIODS},
-    #                     value=200607)
-
-    # dropdown = dcc.Dropdown(options=[{'label': 'Total enrolment', 'value': 'enrolments'}, {'label': 'Total enrolment', 'value': 'enrolments'} ], value='enrolments', id='map-dropdown')
-    title = html.H3('Map over time')
+    title = html.H3('Enrolment over time')
+    description = html.P("""
+    Interactive and intuitive animated visualistation using external libraries
+    as well as additional geographical data.
+    """)
     graph = dcc.Graph(id="map-graph", figure=_new_la_map_figure())
     return html.Div([title, graph])
 

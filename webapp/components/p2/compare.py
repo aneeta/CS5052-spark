@@ -56,13 +56,13 @@ def _compare_figure(loacal_authorities, year):
                         subplot_titles=("Number of Schools", "Enrolments", "Absence Rates")
                         )
     school = px.bar(data, x="Authority", y="Number of Schools",
-                    color="School Type"
+                    color="School Type", legendgroup = '1'
                     )
     enrol = px.bar(data, x="Authority", y="Enrolments",
-                    color="School Type"
+                    color="School Type", legendgroup = '1'
                     )
     absences = px.bar(data, x="Authority", y="Overall Absence Rate (%)",
-                    color="School Type"
+                    color="School Type", legendgroup = '1'
                     )
     for t in school.data:
         fig.append_trace(t, row=1, col=1)

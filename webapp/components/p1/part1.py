@@ -16,37 +16,18 @@ from webapp.components.maindash import app
 from spark import data, la_data, LA_NAMES, SCHOOL_TYPES, PERIODS
 
 from webapp.components.p1.subcomponents.enrolments import la_enrolments_component
-from webapp.components.p1.subcomponents.map import new_la_map_component
 from webapp.components.p1.subcomponents.top_reasons import top_reasons_component
 from webapp.components.p1.subcomponents.school_type import absences_by_school_type_component
 from webapp.components.p1.subcomponents.unauth import unauth_absences_component
 
 def get_part_one():
     return html.Div([
-        la_enrolments_component(),
-        absences_by_school_type_component(),
-        unauth_absences_component(),
-        top_reasons_component(),
-        
-        
-        new_la_map_component(),
+        dbc.Card(dbc.CardBody([la_enrolments_component()]), style={"margin-bottom": 10}),
+        dbc.Card(dbc.CardBody([absences_by_school_type_component()]), style={"margin-bottom": 10}),
+        dbc.Card(dbc.CardBody([unauth_absences_component()]), style={"margin-bottom": 10}),
+        dbc.Card(dbc.CardBody([top_reasons_component()]), style={"margin-bottom": 10}),
     ], style={"padding": 20})
 
-
-
-
-def placeholder_component():
-    title = html.H3('Placeholder')
-    graph = dcc.Graph(
-        figure={
-            'data': [{
-                'x': [1, 2, 3],
-                'y': [3, 1, 2],
-                'type': 'bar'
-            }]
-        }
-    )
-    return html.Div([title, graph])
 
     # x = data.where(col("la_name").isin([None]))\
     #     # .where(col("time_period") == 200910)\

@@ -1,4 +1,5 @@
 from dash import dcc, html
+import dash_bootstrap_components as dbc
 
 from dash.dependencies import Input, Output
 
@@ -18,6 +19,12 @@ TABS = {
 
 app.layout = html.Div([
     html.H1("CS5052 Practical"),
+    dbc.Alert(
+    """
+    This web application interactively presents the data on
+    school attendence in England between 2006 and 2018.
+    """,
+    color="secondary"),
     dcc.Tabs(id="parts", value="part-1",
              children=[dcc.Tab(label="Part 1", value="part-1"),
                        dcc.Tab(label="Part 2", value="part-2"),
