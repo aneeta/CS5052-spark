@@ -1,19 +1,14 @@
 from dash import Dash, dcc, html
-import dash_bootstrap_components as dbc
 
 from dash.dependencies import Input, Output
-
-import plotly.graph_objects as go
 import plotly.express as px
-
-from plotly.subplots import make_subplots
 
 
 from pyspark.sql.functions import sum, col, desc
 
 from webapp.components.maindash import app
 
-from spark import data, la_data, LA_NAMES, SCHOOL_TYPES, PERIODS
+from p1_main import data, SCHOOL_TYPES
 
 def absences_by_school_type_component():
     title = html.H3('Authorised absences in 2017/18')

@@ -8,14 +8,13 @@ from dash.dependencies import Input, Output
 import plotly.graph_objects as go
 import plotly.express as px
 
-from plotly.subplots import make_subplots
 
 
 from pyspark.sql.functions import sum, col, desc
 
 from webapp.components.maindash import app
 
-from spark import data, la_data, LA_NAMES, SCHOOL_TYPES, PERIODS
+from p1_main import data, LA_NAMES, SCHOOL_TYPES, PERIODS
 
 
 def unauth_absences_component():

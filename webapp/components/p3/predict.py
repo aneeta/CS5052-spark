@@ -15,7 +15,7 @@ from pyspark.sql.functions import sum, col, desc
 
 from webapp.components.maindash import app
 
-from spark import data, la_data, LA_NAMES, SCHOOL_TYPES, PERIODS
+from p1_main import data, la_data, LA_NAMES, SCHOOL_TYPES, PERIODS
 
 from p1_main import get_la_analysis, get_region_analysis
 
