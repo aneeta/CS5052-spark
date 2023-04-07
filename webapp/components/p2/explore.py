@@ -1,5 +1,3 @@
-from p1_main import explore
-
 from dash import Dash, dcc, html
 import dash_bootstrap_components as dbc
 import dash_daq as daq

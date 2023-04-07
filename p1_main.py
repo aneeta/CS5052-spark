@@ -1,11 +1,9 @@
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, Row
 from pyspark.sql.functions import sum, col, desc, avg, row_number, col, concat, substring, lit
-from pyspark.sql.types import StructType,StructField, StringType, IntegerType
 from pyspark.sql.window import Window
 
 from pyspark.sql.types import LongType
 
-from pyspark.ml.stat import ChiSquareTest, Correlation
 from pyspark.sql import SparkSession
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import VectorAssembler, StringIndexer, OneHotEncoder
@@ -14,12 +12,9 @@ from pyspark.ml.evaluation import RegressionEvaluator
 from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
 from pyspark.sql.functions import udf
 from pyspark.sql.types import IntegerType
+from pyspark.ml.regression import GeneralizedLinearRegression
 
 import seaborn as sns
-
-from pyspark.ml.feature import StringIndexer, OneHotEncoder
-from pyspark.ml import Pipeline
-from pyspark.ml.feature import VectorAssembler
 
 from pyspark.ml.regression import LinearRegression
 from pyspark.ml.evaluation import RegressionEvaluator
@@ -264,280 +259,137 @@ def get_la_plots():
     fig.set_size_inches(8,5)
     plot_2.get_figure().savefig("LA_Type_Absence.png", bbox_inches="tight")
 
-#
-# categorical_columns = ["Local Authority", "School Type"] 
 
-# indexers = [
-#     StringIndexer(inputCol=c, outputCol=f"{c} Index")
-#     for c in categorical_columns
-# ]
+data_institution = spark.read \
+.format("csv") \
+.option("inferSchema", "true") \
+.option("header", "true") \
+.load("data/edubasealldata20230323.csv")\
+.withColumnRenamed("URN", "urn")
 
-# encoders = [
-#     OneHotEncoder(inputCol=f"{c} Index", outputCol=f"{c} Vec")
-#     for c in categorical_columns
-# ]
+data_enriched = data.join(data_institution, on=["urn"], how="left")\
+                    .where(col("geographic_level") == "School")\
+                    .where(col("Gender (code)").isNotNull())\
+                    .where(col("TypeOfEstablishment (code)").isNotNull())\
+                    .where(col("PhaseOfEducation (code)").isNotNull())
 
-# pipeline = Pipeline(stages=indexers + encoders)
+### Fixed mappings (cat to numeric)
+SCHOOL_TYPE_MAP = {
+    "Special": 0,
+    "State-funded primary": 1,
+    "State-funded secondary": 2,
+}
+PHASE_MAP = {i["PhaseOfEducation (name)"]:i["PhaseOfEducation (code)"] for i in data_enriched.select("PhaseOfEducation (name)", "PhaseOfEducation (code)").distinct().collect()}
+GENDER_MAP = {i["Gender (name)"]:i["Gender (code)"] for i in data_enriched.select("Gender (name)", "Gender (code)").distinct().collect()}
+EST_MAP = {i["TypeOfEstablishment (name)"]:i["TypeOfEstablishment (code)"] for i in data_enriched.select("TypeOfEstablishment (name)", "TypeOfEstablishment (code)").distinct().collect()}
+LA_MAP = {i["LA (name)"]:i["LA (code)"] for i in data_enriched.select("LA (name)", "LA (code)").distinct().collect()}
 
-# la_df_transformed = pipeline.fit(la_df).transform(la_df)
+def encode_school_type(tier):
+    return SCHOOL_TYPE_MAP[tier]
 
-# la_df_transformed.corr("Local Authority Index", 'Overall Absence Rate (%)'), df_transformed.corr("School Type Index", 'Overall Absence Rate (%)')
+encode_tier_udf = udf(encode_school_type, IntegerType())
 
+# Apply the UDF to encode the tiered categories
+data_enriched = data_enriched.withColumn("school_type (code)", encode_tier_udf("school_type"))
 
+to_encode = ["school_type", 'LA', 'TypeOfEstablishment', 'PhaseOfEducation', 'Gender']
 
-# ## Provide school recommendations using machine learning for parents looking for a new school for their child in 2023.
-# Based on past data, can you predict which part of the country will provide schools with the best pupil
-# attendance?
-
-# ### Defining the scope
-# 
-# I am setting the model's target variable to be the attendence rate.
-# Since model will predict the attendence rate, the reccommended school will be the one with lowest attendence rate.
-
-# ### Extra Data
-
-
-# data_institution = spark.read \
-# .format("csv") \
-# .option("inferSchema", "true") \
-# .option("header", "true") \
-# .load("data/edubasealldata20230323.csv")\
-# .withColumnRenamed("URN", "urn")
-
-# data_enriched = data.join(data_institution, on=["urn"], how="left")
-
-#  [markdown]
-# # ### Data Cleaning
-
-
-# data_enriched = data_enriched.where(col("geographic_level") == "School")
-
-
-# data_enriched = data_enriched.where(col("Gender (code)").isNotNull())\
-#              .where(col("TypeOfEstablishment (code)").isNotNull())\
-#              .where(col("PhaseOfEducation (code)").isNotNull())
-
-
-
-# data_enriched.select("OfstedRating (name)").distinct().show()
-
-
-
-
-# # Define the mapping for the categories
-# ofsted_mapping = {
-#     "Outstanding": 5,
-#     "Good": 4,
-#     "Requires improvement": 3,
-#     "Serious Weaknesses": 2,
-#     "Special Measures": 1
-# }
-
-# # Create a User-Defined Function (UDF) to apply the mapping
-# def encode_tier(tier):
-#     return ofsted_mapping[tier]
-
-# encode_tier_udf = udf(encode_tier, IntegerType())
-
-# # Apply the UDF to encode the tiered categories
-# data_enriched = data_enriched.withColumn("Ofsted Rating", encode_tier_udf("OfstedRating (name)"))
-
-
-
-# ## Feature selection
-# categorical_columns = ["school_type"] 
-
-# indexers = [
-#     StringIndexer(inputCol=c, outputCol=f"{c} (code)")
-#     for c in categorical_columns
-# ]
-
-# to_encode = ["school_type", 'LA', 'TypeOfEstablishment', 'PhaseOfEducation', 'Gender']
-
-# encoders = [
-#     OneHotEncoder(inputCol=f"{c} (code)", outputCol=f"{c} Vec")
-#     for c in to_encode
-# ]
-
-# assembler = VectorAssembler(inputCols=feature_columns, outputCol="features")
-
-# # Assemble the feature vector
-# feature_columns = ["time_period"] + [f"{c} Vec" for c in to_encode]
-
-# pipeline = Pipeline(stages=indexers + encoders)
-
-
+encoders = [
+    OneHotEncoder(inputCol=f"{c} (code)", outputCol=f"{c} Vec")
+    for c in to_encode
+]
+feature_columns = to_encode + ["time_period"]
+assembler = VectorAssembler(inputCols=feature_columns, outputCol="features")
 # data_enriched_transformed = pipeline.fit(data_enriched).transform(data_enriched)
 
-# # Assemble the features into a single vector
-# assembler = VectorAssembler(inputCols=feature_columns, outputCol="features")
-# data_assembled = assembler.setHandleInvalid("skip").transform(data_enriched_transformed)
+# ### Setup Data Model
 
+pipeline = Pipeline(stages=encoders + [assembler])
+data_model = pipeline.fit(data_enriched)
 
-# data_assembled.corr("Gender (code)", "sess_overall_percent")
+def get_nested_pie():
+    return data_enriched.groupBy(["school_type", "TypeOfEstablishment (name)",])\
+             .agg(
+                sum("enrolments").alias("Total Enrolments")
+             ).toPandas()
 
+# def transform_to_predict(model, new_row_values):
+#     column_names = ["time_period","school_type (code)", 'LA (code)', 'TypeOfEstablishment (code)', 'PhaseOfEducation (code)', 'Gender (code)']
 
-# data_assembled.corr("enrolments", "sess_overall_percent")
+#     # Create a dictionary mapping column names to row values
+#     new_row_dict = dict(zip(column_names, new_row_values))
 
+#     # Create a Row object with the new row values and the corresponding column names
+#     new_row = Row(**new_row_dict)
 
-# data_assembled.select("features", "sess_overall_percent").show()
+#     # Create a new DataFrame with the single row
+#     new_row_df = data.sparkSession.createDataFrame([new_row])
 
+#     predictions_new = model.transform(data_model.transform(new_row_df))
+#     return predictions_new
 
-# train_data, test_data = data_assembled.select("features", "sess_overall_percent").randomSplit([0.8, 0.2], seed=0)
+# def run_ml():
+#     print("""
 
+#     Build models to predict absence rate.
 
+#     # To make predictions, navigate to the web app.
+#     """)
+    
 
-# lr = LinearRegression(featuresCol="features", labelCol="sess_overall_percent")
+#     train_data, test_data = data_model.transform(data_enriched).select("features", "sess_overall_percent").randomSplit([0.8, 0.2], seed=0)
 
-# paramGrid = ParamGridBuilder() \
-#     .addGrid(lr.regParam, [0.1, 0.01, 0.001]) \
-#     .addGrid(lr.elasticNetParam, [0.0, 0.5, 1.0]) \
-#     .build()
-# # Define the evaluator
-# evaluator = RegressionEvaluator(labelCol="sess_overall_percent", predictionCol="prediction", metricName="rmse")
+#     # Define the evaluator
+#     evaluator = RegressionEvaluator(labelCol="sess_overall_percent", predictionCol="prediction", metricName="rmse")
 
-# # Perform cross-validation
-# cross_validator = CrossValidator(
-#     estimator=lr,
-#     estimatorParamMaps=paramGrid,
-#     evaluator=evaluator,
-#     numFolds=5
-# )
+#     # ### Linear regression
+#     lr = LinearRegression(featuresCol="features", labelCol="sess_overall_percent")
 
-# cv_model = cross_validator.fit(train_data)
+#     param_grid_lr = ParamGridBuilder() \
+#         .addGrid(lr.regParam, [0.1, 0.01, 0.001]) \
+#         .addGrid(lr.elasticNetParam, [0.0, 0.5, 1.0]) \
+#         .build()
 
 
-# predictions = cv_model.transform(test_data)
+#     cross_validator = CrossValidator(
+#         estimator=lr,
+#         estimatorParamMaps=param_grid_lr,
+#         evaluator=evaluator,
+#         numFolds=5
+#     )
 
-# # Evaluate the best model
-# rmse = evaluator.evaluate(predictions)
-# print("Root Mean Squared Error (RMSE) on test data =", rmse)
+#     cv_model_lr = cross_validator.fit(train_data)
+#     best_rl_model = cv_model_lr.bestModel
 
+#     # predictions_lr = cv_model_lr.transform(test_data)
 
-# from pyspark.sql import Row
+#     # Evaluate the best LR model
+#     # rmse_lr = evaluator.evaluate(predictions_lr)
+#     # print("[Linear Regression] Root Mean Squared Error (RMSE) on test data =", rmse)
+#     cv_model_lr.bestModel.save("ml_model/lr")
 
-# # Create a Row object with the same column names as your original dataset
-# # Replace the values with the data you want to predict
-# new_data = Row(time_period=202324, feature2=value2, categorical_col="category_value", attendance_rate=None) 
+#     # ### Generalized Linear regression
 
-# # Create a DataFrame with the new data
-# new_data_df = spark.createDataFrame([new_data])
+#     glm = GeneralizedLinearRegression(featuresCol="features", labelCol="sess_overall_percent", family="gaussian", link="identity")
+#     param_grid_glm = ParamGridBuilder() \
+#         .addGrid(glm.regParam, [0.1, 0.01, 0.001]) \
+#         .addGrid(glm.elasticNetParam, [0.0, 0.5, 1.0]) \
+#         .build()
+#     # Train the model using the training data
+#     cross_validator_glm = CrossValidator(estimator=glm,
+#                                     estimatorParamMaps=param_grid_glm,
+#                                     evaluator=evaluator,
+#                                     numFolds=5)
+#     cv_model_glm = cross_validator_glm.fit(train_data)
 
+#     best_glm_model = cv_model_glm.bestModel
+#     # predictions_glm = best_glm_model.transform(test_data)
+#     # rmse_glm = evaluator.evaluate(predictions_glm)
+#     # cv_model_lr.bestModel.save("ml_model/glm")
 
-# cv_model.bestModel
+#     # print(f"[GLM] Root Mean Squared Error (RMSE) for the best model: {rmse_glm}")
+#     return best_rl_model, best_glm_model
 
-
-# # Calculate correlation (Pearson or Spearman)
-# correlation_matrix = Correlation.corr(data_assembled, "features", method="spearman").collect()[0][0]
-
-# # Get the correlation values for each feature
-# correlations = [(feature_columns[i], correlation_matrix[i, -1]) for i in range(len(feature_columns))]
-
-# # Sort the features by their absolute correlation with the target variable
-# sorted_features = sorted(correlations, key=lambda x: abs(x[1]), reverse=True)
-
-# # Select the top k features
-# top_k_features = [feature for feature, _ in sorted_features[:k]]
-
-#  [markdown]
-# # ### Linear Regression
-
-#  [markdown]
-# # #### Region Level
-
-
-# assembler = VectorAssembler(inputCols=["Region Vec", "School Type Vec", "Average Enrolment"], outputCol="features")
-# region_df_assembled = assembler.transform(region_df_transformed)
-
-
-# lr = LinearRegression(featuresCol="features", labelCol="Overall Absence Rate (%)")
-# region_model = lr.fit(region_df_assembled)
-
-
-# predictions = model.transform(df_assembled)
-# predictions.show()
-
-
-# evaluator = RegressionEvaluator(predictionCol="prediction", labelCol="Overall Absence Rate (%)", metricName="rmse")
-# rmse = evaluator.evaluate(predictions)
-# print(f"RMSE: {rmse}")
-
-#  [markdown]
-# # ### Local Authority Level
-
-
-# la_df = data.where(col("geographic_level") == "Local authority")\
-#     .where(col("school_type") != "Total")\
-#     .groupBy(["la_name", "school_type"])\
-#     .agg(
-#     sum("num_schools").alias("Number of Schools"),
-#     sum("enrolments").alias("Enrolments"),
-#     sum("sess_overall").alias("Overall Absence Sessions"), # Number of overall absence sessions
-#     sum("sess_possible").alias("Possible Sessions"), # Number of sessions possible
-#     # sum("sess_possible_pa_10_exact") # Number of sessions possible of persistent absentees
-# ).orderBy(["la_name"])\
-#     .withColumn("Average Enrolment", col("Enrolments")/col("Number of Schools"))\
-#     .withColumn("Overall Absence Rate (%)", 100 * col("Overall Absence Sessions")/col("Possible Sessions"))\
-#     .withColumnRenamed("school_type", "School Type")\
-#     .withColumnRenamed("la_name", "Local Authority")
-
-
-# sns.set(rc={'figure.figsize':(10, 30)})
-# sns.swarmplot(y='Local Authority', x='Overall Absence Rate (%)', hue="School Type", data=la_df.toPandas())
-
-
-
-# sns.set(rc={'figure.figsize':(8, 5)})
-# sns.swarmplot(y='School Type', x='Overall Absence Rate (%)', data=la_df.toPandas())
-
-
-# categorical_columns = ["Local Authority", "School Type"] 
-
-# indexers = [
-#     StringIndexer(inputCol=c, outputCol=f"{c} Index")
-#     for c in categorical_columns
-# ]
-
-# encoders = [
-#     OneHotEncoder(inputCol=f"{c} Index", outputCol=f"{c} Vec")
-#     for c in categorical_columns
-# ]
-
-# pipeline = Pipeline(stages=indexers + encoders)
-# df_transformed = pipeline.fit(la_df).transform(la_df)
-
-
-# df_transformed.show()
-
-#  [markdown]
-# # # Extra Data
-
-
-
- 
-
-
-# data_institution.printSchema()
-
-
-
-
-
-# OfstedRating (name)
-# OfstedSpecialMeasures (name)
-# SchoolCapacity
-# AdmissionsPolicy (code)
-# Gender (code)
-
-# PhaseOfEducation (code)
-
-# EstablishmentStatus (name) == 'Open'
-
-# EstablishmentTypeGroup (code)
-# TypeOfEstablishment (code)
-
-
-# data_enriched.where(col("geographic_level") == "School").show()
 
 def part_one():
     print("===Part 1===")
@@ -643,6 +495,7 @@ def part_three():
     print("===Part 3===")
     get_region_plots()
     get_la_plots()
+    # run_ml()
 
 
 def main():
